@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
-	"io"
-
+	"strings"
 )
 
 var _ = net.Listen
@@ -34,11 +34,12 @@ func main() {
 
 func multipleConn(conn net.Conn) {
 	defer conn.Close()
-
-	buffer := make([]byte, 1024)
-
+	
 	for {		
-		_, err := conn.Read(buffer)
+		buffer := make([]byte, 1024)
+
+		n, err := conn.Read(buffer)
+		fmt.Println(n)
 
 		if err != nil {
 			if err == io.EOF{
@@ -48,7 +49,21 @@ func multipleConn(conn net.Conn) {
 			}
 			return
 		}
+		
+		input := string(buffer[:n])
+		// fmt.Println(input)
 
-		conn.Write([]byte("+PONG\r\n"))
+		if strings.Contains(strings.ToUpper(input), "ECHO") {
+			parts := strings.Split(input, "\r\n")
+
+			message := parts[4]
+
+			response := fmt.Sprintf("$%d\r\n%s\r\n", len(message), message)			
+			
+			conn.Write([]byte(response))
+		} else {
+			conn.Write([]byte("+PONG\r\n"))
+		}
+
 	}	
 }
