@@ -5,14 +5,23 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var _ = net.Listen
 var _ = os.Exit
+
+type Item struct {
+	Value string
+	ExpiresAt time.Time
+	HasExpiry bool
+}
+
 var (
-	storage = make(map[string]string)
+	storage = make(map[string]Item)
 	mu 	sync.RWMutex
 )
 
@@ -41,7 +50,7 @@ func main() {
 
 func multipleConn(conn net.Conn) {
 	defer conn.Close()
-	
+		
 	for {		
 		buffer := make([]byte, 1024)
 
@@ -57,8 +66,6 @@ func multipleConn(conn net.Conn) {
 			return
 		}
 		
-		// GET Input: *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
-		// SET Input: *2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n
 		input := string(buffer[:n])
 		parts := strings.Split(input, "\r\n")
 		command := strings.ToUpper(parts[2])
@@ -71,24 +78,52 @@ func multipleConn(conn net.Conn) {
 			response := fmt.Sprintf("$%d\r\n%s\r\n", len(message), message)			
 			conn.Write([]byte(response))
 		case "SET":
+			// SET foo bar PX 100: *5\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$2\r\nPX\r\n$3\r\n100\r\n
 			key := parts[4]
 			value := parts[6]
+			
+			item := Item{
+				Value: value,
+				HasExpiry: false,
+			}
+			
+			if len(parts) > 8 && strings.ToUpper(parts[8]) == "PX"{
+				ms, err := strconv.Atoi(parts[10])
+				expiryDuration := time.Duration(ms) * time.Millisecond
+				expiresAt := time.Now().Add(expiryDuration)
 
+				if err == nil {
+					item.HasExpiry = true
+					item.ExpiresAt = expiresAt					
+				}
+				
+			}
+			
 			mu.Lock()
-			storage[key] = value
+			storage[key] = item			
 			mu.Unlock()
 
 			conn.Write([]byte("+OK\r\n"))
 		case "GET":
+			// GET foo: *2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n
 			key := parts[4]
 
 			mu.RLock()
-			value, exists := storage[key]
+			item, exists := storage[key]
 			mu.RUnlock()
+
+			if exists && item.HasExpiry && time.Now().After(item.ExpiresAt){
+				// if it has expired
+				mu.Lock()
+				delete(storage, key) //cleanup from memory
+				mu.Unlock()
+
+				exists = false
+			}
 
 			if exists {
 				// Send Bulk String: "$length\r\nvalue\r\n"
-				response := fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)			
+				response := fmt.Sprintf("$%d\r\n%s\r\n", len(item.Value), item.Value)			
 				conn.Write([]byte(response))
 			} else {
 				// Redis Null Bull String 
