@@ -21,7 +21,8 @@ type Item struct {
 }
 
 var (
-	storage = make(map[string]Item)
+	storage = make(map[string]Item) //FOR SET and GET
+	list = make(map[string][]string) // For RPUSH
 	mu 	sync.RWMutex
 )
 
@@ -129,7 +130,25 @@ func multipleConn(conn net.Conn) {
 				// Redis Null Bull String 
 				conn.Write([]byte("$-1\r\n"))
 			}
-			
+		case "RPUSH":
+			// RPUSH colors red blue: *4\r\n$5\r\nRPUSH\r\n$6\r\ncolors\r\n$3\r\nred\r\n$4\r\nblue\r\n
+			key := parts[4]
+			var newValues []string
+
+			for i := 6; i < len(parts); i += 2 {
+				if parts[i] != "" {
+					newValues = append(newValues, parts[i])
+				}
+			}
+
+			mu.Lock()
+			list[key] = append(list[key], newValues...)
+			listLength := len(list[key])
+			mu.Unlock()
+
+			response := fmt.Sprintf(":%d\r\n", listLength)
+			conn.Write([]byte(response))
+						
 		default:
 			fmt.Println("Unknown command:", command)
 		}
