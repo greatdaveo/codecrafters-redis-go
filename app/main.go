@@ -148,7 +148,37 @@ func multipleConn(conn net.Conn) {
 
 			response := fmt.Sprintf(":%d\r\n", listLength)
 			conn.Write([]byte(response))
-						
+		
+		case "LRANGE":
+			// LRANGE key start stop: *4\r\n$6\r\nLRANGE\r\n$6\r\nmylist\r\n$1\r\n0\r\n$1\r\n2\r\n
+			key := parts[4]
+			start, _ := strconv.Atoi(parts[6])
+			stop, _ := strconv.Atoi(parts[8])
+
+			mu.RLock()
+			fullList, exists := list[key]
+			mu.RUnlock()
+
+			if !exists {
+				conn.Write([]byte("*0\r\n"))
+				continue
+			}
+
+			if stop >= len(fullList){
+				stop = len(fullList) - 1
+			}
+
+			//Extract sub slice
+			result := fullList[start : stop + 1] // because stop is exclusive
+			// Array header - count of items in the array
+			response := fmt.Sprintf("*%d\r\n", len(result))
+
+			// Add each item as a bulk string to the array
+			for _, item := range result {
+				response += fmt.Sprintf("$%d\r\n%s\r\n", len(item), item)
+			}
+
+			conn.Write([]byte(response))
 		default:
 			fmt.Println("Unknown command:", command)
 		}
