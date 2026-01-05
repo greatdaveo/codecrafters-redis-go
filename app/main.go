@@ -159,13 +159,37 @@ func multipleConn(conn net.Conn) {
 			fullList, exists := list[key]
 			mu.RUnlock()
 
-			if !exists {
+			listLegth := len(fullList)
+
+			if !exists || listLegth == 0 {
 				conn.Write([]byte("*0\r\n"))
 				continue
 			}
 
+			// For negative start or stop
+			if start < 0 {
+				start = listLegth + start
+			}
+
+			if stop < 0 {
+				stop = listLegth + stop
+			}
+
+			// after conversion
+			if start < 0 {
+				start = 0
+			}
+			if stop >= listLegth {
+				stop = listLegth - 1 // cap to the last index
+			}
+
 			if stop >= len(fullList){
 				stop = len(fullList) - 1
+			}
+
+			if start > stop {
+				conn.Write([]byte("*0\r\n"))
+				continue
 			}
 
 			//Extract sub slice
