@@ -22,7 +22,7 @@ type Item struct {
 
 var (
 	storage = make(map[string]Item) //FOR SET and GET
-	list = make(map[string][]string) // For RPUSH
+	lists = make(map[string][]string) // For RPUSH, LPUSH and LRANGE
 	mu 	sync.RWMutex
 )
 
@@ -130,6 +130,31 @@ func multipleConn(conn net.Conn) {
 				// Redis Null Bull String 
 				conn.Write([]byte("$-1\r\n"))
 			}
+		case "LPUSH":
+			key := parts[4]
+			var newValues []string
+
+			for i := 6; i < len(parts); i += 2 {
+				if parts[i] != "" {
+					newValues = append(newValues, parts[i])
+				}
+			}
+
+			mu.Lock()
+			currentList := lists[key]
+
+			// Reverse prepend 
+			for _, val := range newValues {
+				currentList = append([]string{val}, currentList...)
+			}
+
+			lists[key] = currentList
+			listLength := len(lists[key])
+			mu.Unlock()
+
+			// :<length>\r\n
+			conn.Write([]byte(fmt.Sprintf(":%d\r\n", listLength)))
+
 		case "RPUSH":
 			// RPUSH colors red blue: *4\r\n$5\r\nRPUSH\r\n$6\r\ncolors\r\n$3\r\nred\r\n$4\r\nblue\r\n
 			key := parts[4]
@@ -142,10 +167,11 @@ func multipleConn(conn net.Conn) {
 			}
 
 			mu.Lock()
-			list[key] = append(list[key], newValues...)
-			listLength := len(list[key])
+			lists[key] = append(lists[key], newValues...)
+			listLength := len(lists[key])
 			mu.Unlock()
 
+			// :<length>\r\n
 			response := fmt.Sprintf(":%d\r\n", listLength)
 			conn.Write([]byte(response))
 		
@@ -156,7 +182,7 @@ func multipleConn(conn net.Conn) {
 			stop, _ := strconv.Atoi(parts[8])
 
 			mu.RLock()
-			fullList, exists := list[key]
+			fullList, exists := lists[key]
 			mu.RUnlock()
 
 			listLegth := len(fullList)
