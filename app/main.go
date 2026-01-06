@@ -283,12 +283,45 @@ func multipleConn(conn net.Conn) {
 			} else {
 				// RESP Array
 				response := fmt.Sprintf("*%d\r\n", len(itemToPop))
-				
+
 				for _, item := range itemToPop {
 					response += fmt.Sprintf("$%d\r\n%s\r\n", len(item), item)
 				}
 
 				conn.Write([]byte(response))
+			}
+		
+		case "BLPOP":
+			key := parts[4]
+			timeOutStr := parts[6]
+			timeOutSec, _ := strconv.Atoi(timeOutStr)
+
+			startTime := time.Now()
+
+			for {
+				mu.Lock()
+				currentList, exists := lists[key]
+
+				if exists && len(currentList) > 0 {
+					// Found something
+					popped := currentList[0]
+					lists[key] = currentList[1:]
+					mu.Unlock()
+					
+					// response = [key, value]
+					response := fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(popped), popped)
+					conn.Write([]byte(response))
+				}
+
+				mu.Unlock()
+
+				// if nothing found, check if should wait
+				if timeOutSec > 0 && time.Since(startTime).Seconds() >= float64(timeOutSec){
+					conn.Write([]byte("$-1\r\n")) //time out reached
+					break
+				}
+
+				time.Sleep(50 * time.Millisecond)
 			}
 
 		default:
