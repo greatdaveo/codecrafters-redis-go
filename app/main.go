@@ -229,6 +229,28 @@ func multipleConn(conn net.Conn) {
 			}
 
 			conn.Write([]byte(response))
+		
+		case "LLEN":
+			// LLEN key: *2\r\n$4\r\nLLEN\r\n$6\r\nmylist\r\n
+			key := parts[4]
+
+			mu.RLock()
+			currentLists, exists := lists[key]
+			mu.RUnlock()
+
+			length := 0
+
+			if exists {
+				length = len(currentLists)
+			}
+
+			// :count\r\n
+			response := fmt.Sprintf(":%d\r\n", length)
+			
+			conn.Write([]byte(response))
+
+
+			
 		default:
 			fmt.Println("Unknown command:", command)
 		}
