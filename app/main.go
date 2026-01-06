@@ -250,7 +250,16 @@ func multipleConn(conn net.Conn) {
 			conn.Write([]byte(response))
 
 		case "LPOP":
+			// LPOP key 2: 
 			key := parts[4]
+			count := 1
+			isMulti := false
+
+			// if there is a count, it will be at index 6
+			if len(parts) > 6 && parts[6] != ""{
+				count, _ = strconv.Atoi(parts[6])
+				isMulti = true // to send an array
+			}
 			
 			mu.Lock()
 			currentList, exists := lists[key]
@@ -258,17 +267,30 @@ func multipleConn(conn net.Conn) {
 			if !exists && len(currentList) == 0 {
 				mu.Unlock()
 				conn.Write([]byte("$-1\r\n"))
+				continue
 			}
 
-			itemToPop := currentList[0]
+			itemToPop := currentList[:count]			
 			
-			// Update lists to remove first item only
-			lists[key] = currentList[1:]
+			lists[key] = currentList[count:]
 			mu.Unlock()
 
-			response := fmt.Sprintf("$%d\r\n%s\r\n", len(itemToPop), itemToPop)
-			conn.Write([]byte(response))
-						
+			if !isMulti {
+				// Bulk string
+				val := itemToPop[0]
+				response := fmt.Sprintf("$%d\r\n%s\r\n", len(val), val)
+				conn.Write([]byte(response))
+			} else {
+				// RESP Array
+				response := fmt.Sprintf("*%d\r\n", len(itemToPop))
+				
+				for _, item := range itemToPop {
+					response += fmt.Sprintf("$%d\r\n%s\r\n", len(item), item)
+				}
+
+				conn.Write([]byte(response))
+			}
+
 		default:
 			fmt.Println("Unknown command:", command)
 		}
