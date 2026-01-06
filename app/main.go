@@ -249,8 +249,26 @@ func multipleConn(conn net.Conn) {
 			
 			conn.Write([]byte(response))
 
-
+		case "LPOP":
+			key := parts[4]
 			
+			mu.Lock()
+			currentList, exists := lists[key]
+
+			if !exists && len(currentList) == 0 {
+				mu.Unlock()
+				conn.Write([]byte("$-1\r\n"))
+			}
+
+			itemToPop := currentList[0]
+			
+			// Update lists to remove first item only
+			lists[key] = currentList[1:]
+			mu.Unlock()
+
+			response := fmt.Sprintf("$%d\r\n%s\r\n", len(itemToPop), itemToPop)
+			conn.Write([]byte(response))
+						
 		default:
 			fmt.Println("Unknown command:", command)
 		}
