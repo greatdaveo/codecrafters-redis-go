@@ -292,9 +292,10 @@ func multipleConn(conn net.Conn) {
 			}
 		
 		case "BLPOP":
+			// BLPOP key 0.5 
 			key := parts[4]
 			timeOutStr := parts[6]
-			timeOutSec, _ := strconv.Atoi(timeOutStr)
+			timeOutSec, _ := strconv.ParseFloat(timeOutStr, 64)
 
 			startTime := time.Now()
 
@@ -303,22 +304,28 @@ func multipleConn(conn net.Conn) {
 				currentList, exists := lists[key]
 
 				if exists && len(currentList) > 0 {
-					// Found something
-					popped := currentList[0]
+					// Data found
+					poppedVal := currentList[0]
 					lists[key] = currentList[1:]
 					mu.Unlock()
 					
 					// response = [key, value]
-					response := fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(popped), popped)
+					response := fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(poppedVal), poppedVal)
 					conn.Write([]byte(response))
+					
+					return
 				}
 
 				mu.Unlock()
 
-				// if nothing found, check if should wait
-				if timeOutSec > 0 && time.Since(startTime).Seconds() >= float64(timeOutSec){
-					conn.Write([]byte("$-1\r\n")) //time out reached
-					break
+				// if timeout is 0, wait forever
+				if timeOutSec > 0 {
+					elapsed := time.Since(startTime)
+					if elapsed.Seconds() >= float64(timeOutSec){
+						// if no data found, time is up
+						conn.Write([]byte("*-1\r\n"))
+						return
+					}					
 				}
 
 				time.Sleep(50 * time.Millisecond)
